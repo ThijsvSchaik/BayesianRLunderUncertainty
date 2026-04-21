@@ -27,4 +27,4 @@ env.plot_unsafe_states()
 
 ## Notebook
 
-See `/home/runner/work/BayesianRLunderUncertainty/BayesianRLunderUncertainty/notebooks/environment_quickstart.ipynb` for a simple experiment flow.
+See `notebooks/environment_quickstart.ipynb` for a simple experiment flow.

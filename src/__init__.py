@@ -1,3 +1,3 @@
-from .environment import GridGaussianEnvironment
+from .environment_2 import ProbabilisticSimpleSystem
 
-__all__ = ["GridGaussianEnvironment"]
+__all__ = ["ProbabilisticSimpleSystem"]

@@ -1,6 +1,6 @@
 import unittest
 
-from bayesian_rl_under_uncertainty import GridGaussianEnvironment
+from src import GridGaussianEnvironment
 
 
 class TestGridGaussianEnvironment(unittest.TestCase):

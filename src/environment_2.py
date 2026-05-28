@@ -12,11 +12,13 @@ class ProbabilisticSimpleSystem:
                 grid_shape=(100, 100),
                 reward_gaussian_mean=(65, 80),
                 reward_gaussian_sigma=20.0,
+                reward_scale=1.0,
                 num_unsafe_blocks=10,
                 block_size_range=(6, 18),
                 step_size=3.0,
                 sigma_parallel=1.5,
                 sigma_perpendicular=0.5
+
             ):
         
         self.seed = seed
@@ -25,6 +27,7 @@ class ProbabilisticSimpleSystem:
         self.grid_shape = grid_shape
         self.reward_gaussian_mean = reward_gaussian_mean
         self.reward_gaussian_sigma = reward_gaussian_sigma
+        self.reward_scale = reward_scale
         self.num_unsafe_blocks = num_unsafe_blocks
         self.block_size_range = block_size_range
         self.step_size = step_size
@@ -108,7 +111,7 @@ class ProbabilisticSimpleSystem:
     # Reward per state
     def get_reward(self, state):
         base_reward = self.reward_map[state[0]][state[1]]
-        return base_reward * self.rng.normal(1, 0.1)
+        return base_reward * self.reward_scale * self.rng.normal(1, 0.1)
 
     def _generate_hill(self, top, sigma=20.0):
         cx, cy = top
@@ -278,7 +281,7 @@ class ProbabilisticSimpleSystem:
         
         for i, (top, sigma, strength, normalized) in enumerate(self.hill_tops):
             tx, ty = top
-            ax.plot(tx + 0.5, ty + 0.5, 'o', markersize=12, 
+            ax.plot(tx + 0.5, ty + 0.5, 'o', markersize=5, 
                     label=f'Hill {i+1}' if len(self.hill_tops) > 1 else 'Hill top')
         
         ax.set_xlim(0, cols)

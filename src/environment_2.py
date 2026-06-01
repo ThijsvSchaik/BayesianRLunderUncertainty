@@ -10,7 +10,7 @@ class ProbabilisticSimpleSystem:
     def __init__(self, seed, 
                 hill_importance=1.0,
                 grid_shape=(100, 100),
-                reward_gaussian_mean=(65, 80),
+                reward_gaussian_mean=(80, 65),
                 reward_gaussian_sigma=20.0,
                 reward_scale=1.0,
                 num_unsafe_blocks=10,

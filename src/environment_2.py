@@ -289,5 +289,5 @@ class ProbabilisticSimpleSystem:
 
         ax.set_xlabel("X")
         ax.set_ylabel("Y")
-        ax.legend(loc='upper right')
+        # ax.legend(loc='upper right')
         return ax

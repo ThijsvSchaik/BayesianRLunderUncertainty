@@ -1,4 +1,5 @@
 import numpy as np
+from pyro import do
 import torch
 from tqdm import tqdm
 
@@ -15,7 +16,7 @@ class QLearningAgent:
                 gamma=0.9, 
                 epsilon=0.1,
                 epsilon_decay=0.995,
-                min_epsilon=0.1
+                min_epsilon=0.1,
                 ):
         
         self.env = env
@@ -31,55 +32,82 @@ class QLearningAgent:
 
 
 
-    def get_action(self, state):
+    def get_action(self, state, rank = 0):
         if np.random.rand() < self.epsilon:
             action_index = np.random.choice(len(self.actions))
             action = list(self.actions.values())[action_index]  
         else:
             x, y = state
-            action_index = np.argmax(self.q_values[x, y, :])
+            # Sort Q-values in descending order and get the (rank)th best action
+            sorted_indices = np.argsort(self.q_values[x, y, :])[::-1]
+            action_index = sorted_indices[min(rank, len(sorted_indices) - 1)]
             action = list(self.actions.values())[action_index]
         return action, action_index
-
-    def square_keep_sign(self, n):
-        if n >= 0:
-            return n ** 2
-        else:
-            return -(n ** 2)
-
+    
     def distance_to_goal(self, state):
         x, y = state
         return np.sqrt((x - self.top[0]) ** 2 + (y - self.top[1]) ** 2)
-        
-    def train(self, start_state, episodes=1000, max_steps=100):
+
+
+    def train(self, start_state, episodes=1000, max_steps=100, 
+              reward_f= lambda s, s_prime, env: env.get_reward(s_prime), 
+              risk_eval=lambda s, a, env: (0, True),
+              reward_risk_p_op=lambda reward, risk_p: reward + risk_p
+              ):
+
+        self.q_values = np.zeros((self.env.grid_shape[0], self.env.grid_shape[1], len(self.actions)))  # reset Q-values at the start of training
         # continuous training the Q_learning agent.
         # resamples visited states per run, returns the training data for the GP (state, action) -> next state
+        # if the agent takes an unsafe action, it will be punished for the risk, r=0 and combined with risk punisment,
+        #  but will not transition to the next state (as if the shield prevented the action)
 
         # N samples x M tasks, (0,4) as we have not sampled yet
         train_x = torch.empty((0, 4), dtype=torch.float64)
         train_y = torch.empty((0, 2), dtype=torch.float64)
 
-        # states_visited = {}
+        unsafe_counts = 0
 
         for episode in tqdm(range(episodes), desc="Training Episodes"):
             s = start_state
+            rank = 0
 
             for step in range(max_steps):
                 x, y = s
 
-                a, a_index = self.get_action(s)
+                a, a_index = self.get_action(s, rank=rank)
+                ps = []
+
+                r_p, safe = risk_eval(s, a, self.env)
+
+                while not safe:
+                    ps.append((a, a_index, r_p))
+                    rank += 1
+                    a, a_index = self.get_action(s, rank=rank)
+                    r_p, safe = risk_eval(s, a, self.env)
+                    if rank >= len(self.actions):
+                        a, a_index, r_p = sorted(ps, key=lambda x: x[2])[-1]   
+                        safe = True
+                        
+                    r = reward_risk_p_op(0, r_p)
+
+
+                    # if action not taken, still punish the agent for the risk, but do not transition to the next state
+                    # for Q(a', s') use a punishment as we assume the next state is unsafe and needs punishment as well
+                    self.q_values[x, y, a_index] = (
+                        (1 - self.alpha) * self.q_values[x, y, a_index]
+                        + self.alpha * (r + self.gamma * r_p)
+                    )          
+
+
+
                 s_prime = self.env.transition(s, a)
 
-                if self.distance_to_goal(s_prime) < 5:
-                    r = 100
-                else:
-                    # r = env.get_reward(s_prime) - 10
-                    # r = distance_to_goal(s_prime) * -2 + r
-                    r = self.square_keep_sign(self.distance_to_goal(s) - self.distance_to_goal(s_prime)) - 10
+                r = reward_risk_p_op(reward_f(s, s_prime, self.env), r_p)
 
                 # states_visited[s_prime] = states_visited.get(s_prime, 0) + 1
-
                 x_prime, y_prime = s_prime
+                if self.env.unsafe_mask[s_prime[0], s_prime[1]]:
+                    unsafe_counts += 1
 
 
                 best_next_q = np.max(self.q_values[x_prime, y_prime, :])
@@ -107,7 +135,7 @@ class QLearningAgent:
 
             self.epsilon = max(self.min_epsilon, self.epsilon * self.epsilon_decay)
 
-        return train_x, train_y
+        return train_x, train_y, unsafe_counts
 
     def get_q_values(self):
         return self.q_values

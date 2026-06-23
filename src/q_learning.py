@@ -39,9 +39,23 @@ class QLearningAgent:
         else:
             x, y = state
             # Sort Q-values in descending order and get the (rank)th best action
-            sorted_indices = np.argsort(self.q_values[x, y, :])[::-1]
-            action_index = sorted_indices[min(rank, len(sorted_indices) - 1)]
+            # sorted_indices = np.argsort(self.q_values[x, y, :])[::-1]
+            # action_index = sorted_indices[min(rank, len(sorted_indices) - 1)]
+            # action = list(self.actions.values())[action_index]
+            q = self.q_values[x, y]
+            max_q = np.max(q)
+            best_actions = np.flatnonzero(q == max_q)
+            action_index = np.random.choice(best_actions)
             action = list(self.actions.values())[action_index]
+        return action, action_index
+
+    def get_action_from_q_values(self, state, rank=0):
+        x, y = state
+        q = self.q_values[x, y]
+        max_q = np.max(q)
+        best_actions = np.flatnonzero(q == max_q)
+        action_index = np.random.choice(best_actions)
+        action = list(self.actions.values())[action_index]
         return action, action_index
     
     def distance_to_goal(self, state):
@@ -50,9 +64,11 @@ class QLearningAgent:
 
 
     def train(self, start_state, episodes=1000, max_steps=100, 
-              reward_f= lambda s, s_prime, env: env.get_reward(s_prime), 
-              risk_eval=lambda s, a, env: (0, True),
-              reward_risk_p_op=lambda reward, risk_p: reward + risk_p
+              mathcal_R= lambda s, s_prime, env: env.get_reward(s_prime), 
+              R=lambda s, a, env: (0, True),
+              H = lambda rho: 10*rho,
+              C=lambda reward, p: reward - p,
+              delta=1
               ):
 
         self.q_values = np.zeros((self.env.grid_shape[0], self.env.grid_shape[1], len(self.actions)))  # reset Q-values at the start of training
@@ -69,40 +85,41 @@ class QLearningAgent:
 
         for episode in tqdm(range(episodes), desc="Training Episodes"):
             s = start_state
-            rank = 0
 
             for step in range(max_steps):
+                rank = 0
                 x, y = s
 
                 a, a_index = self.get_action(s, rank=rank)
+
+                # print(f"a = {a}, a_index = {a_index}")
+
                 ps = []
 
-                r_p, safe = risk_eval(s, a, self.env)
+                r_p, safe = R(s, a_index, delta, self.env)
 
                 while not safe:
                     ps.append((a, a_index, r_p))
-                    rank += 1
-                    a, a_index = self.get_action(s, rank=rank)
-                    r_p, safe = risk_eval(s, a, self.env)
-                    if rank >= len(self.actions):
-                        a, a_index, r_p = sorted(ps, key=lambda x: x[2])[-1]   
-                        safe = True
-                        
-                    r = reward_risk_p_op(0, r_p)
-
+                    # print("Unsafe action taken, trying next best action...")
+                    p = H(r_p)
 
                     # if action not taken, still punish the agent for the risk, but do not transition to the next state
                     # for Q(a', s') use a punishment as we assume the next state is unsafe and needs punishment as well
                     self.q_values[x, y, a_index] = (
                         (1 - self.alpha) * self.q_values[x, y, a_index]
-                        + self.alpha * (r + self.gamma * r_p)
-                    )          
+                        + self.alpha * (self.gamma * -p)
+                    )   
 
-
+                    a, a_index = self.get_action_from_q_values(s, rank=rank)
+                    r_p, safe = R(s, a_index, delta, self.env)
+                    if rank >= len(self.actions) - 1:
+                        a, a_index, r_p = min(ps, key=lambda x: x[2])
+                        safe = True
+                    rank += 1
 
                 s_prime = self.env.transition(s, a)
-
-                r = reward_risk_p_op(reward_f(s, s_prime, self.env), r_p)
+                p = H(r_p)
+                r = C(mathcal_R(s, s_prime, self.env), p)
 
                 # states_visited[s_prime] = states_visited.get(s_prime, 0) + 1
                 x_prime, y_prime = s_prime

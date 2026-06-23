@@ -58,14 +58,17 @@ class ProbabilisticSimpleSystem:
         mask[0][0] = False
         return mask
 
-    def _build_falling_prob_map(self):
-        # todo
-        pass
+    def save_risk_maps(self, risk_maps):
+        self.risk_maps = risk_maps
+
+    def get_risk_maps(self):
+        return self.risk_maps
+
 
     def transition(self, state: Tuple[int, int], action: Tuple[int, int]) -> Tuple[int, int]:
         x, y = state
         hill_influence_x = self.hill_vx[y, x] * self.hill_importance
-        hill_influence_y = self.hill_vy[y, x] * self.hill_importance
+        hill_influence_y = -self.hill_vy[y, x] * self.hill_importance
         
         # print(f"Hill influence at state {state}: (x={hill_influence_x:.2f}, y={hill_influence_y:.2f})")
         

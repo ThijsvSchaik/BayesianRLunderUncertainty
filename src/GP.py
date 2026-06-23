@@ -12,18 +12,16 @@ class BoTorchDualSingleTaskGP:
         
         self.num_tasks = 2
         n_inputs = train_x.shape[-1]
-        
-        # Store training data
         self.train_x = train_x
         self.train_y = train_y
 
-        # Inputs are: x_pos (0-100), y_pos (0-100), action_x (-1 to 1), action_y (-1 to 1)
+        #x_pos (0-100), y_pos (0-100), action_x (-1 to 1), action_y (-1 to 1)
         bounds = torch.tensor([
             [0., 0., -1., -1.],
             [100., 100., 1., 1.]
         ], dtype=torch.float64)
         
-        # Create two independent SingleTaskGPs with built-in normalization
+        # Two independent SingleTaskGPs with built-in normalization
         self.gp_x = SingleTaskGP(
             train_X=train_x,
             train_Y=train_y[:, 0:1],
@@ -40,12 +38,10 @@ class BoTorchDualSingleTaskGP:
             covar_module=y_kernel()
         )
         
-        # Create MLLs for each GP
         self.mll_x = gpytorch.mlls.ExactMarginalLogLikelihood(self.gp_x.likelihood, self.gp_x)
         self.mll_y = gpytorch.mlls.ExactMarginalLogLikelihood(self.gp_y.likelihood, self.gp_y)
     
     def fit(self, training_iterations=50, lr=0.1, verbose=True):
-        """Train both GPs independently."""
         self.gp_x.train()
         self.gp_y.train()
         
@@ -56,7 +52,7 @@ class BoTorchDualSingleTaskGP:
         losses_y = []
         
         for i in range(training_iterations):
-            # Train GP for x-coordinate
+            # Train x GP
             optimizer_x.zero_grad()
             output_x = self.gp_x(self.train_x)
             loss_x = -self.mll_x(output_x, self.train_y[:, 0])
@@ -64,7 +60,7 @@ class BoTorchDualSingleTaskGP:
             optimizer_x.step()
             losses_x.append(loss_x.item())
             
-            # Train GP for y-coordinate
+            # Train y GP
             optimizer_y.zero_grad()
             output_y = self.gp_y(self.train_x)
             loss_y = -self.mll_y(output_y, self.train_y[:, 1])
@@ -127,12 +123,12 @@ class BoTorchDualSingleTaskGP:
                                     'left': (-1, 0),
                                 }, 
                                 start_positions = [(50, 50), (20, 20), (80, 80), (20, 80), (80, 20)],
-                                walk_length=500
+                                walk_length=500,
+                                walks=1
                                 ):
         # Generate training data
         import random
 
-        walk_length = 500
         actions_taken = [random.choice(list(actions.values())) for _ in range(walk_length)]
         state = start_positions[0]  # Start at the first position for the first walk
 
@@ -141,15 +137,20 @@ class BoTorchDualSingleTaskGP:
         train_y = torch.empty((0, 2), dtype=torch.float64)
 
         states_visited = []
+        unsafe_count = 0
 
         for start_pos in start_positions:
             state = start_pos
-            for i in range(walk_length):
-                x, y = state
-                states_visited.append(state)
-                state = env.transition(state=state, action=actions_taken[i])
-                train_x = torch.cat((train_x, torch.tensor([[x, y, actions_taken[i][0], actions_taken[i][1]]], dtype=torch.float64)), dim=0)
-                train_y = torch.cat((train_y, torch.tensor([[state[0], state[1]]], dtype=torch.float64)), dim=0)
+            for walk in range(walks):
+                for i in range(walk_length):
+                    x, y = state
+                    states_visited.append(state)
+                    state = env.transition(state=state, action=actions_taken[i])
+                    train_x = torch.cat((train_x, torch.tensor([[x, y, actions_taken[i][0], actions_taken[i][1]]], dtype=torch.float64)), dim=0)
+                    train_y = torch.cat((train_y, torch.tensor([[state[0], state[1]]], dtype=torch.float64)), dim=0)
+                    if env.unsafe_mask[state]:
+                        unsafe_count += 1  # Stop walk if we hit an unsafe state
+
 
         # for i in range(walk_length):
         #     x, y = state
@@ -157,4 +158,4 @@ class BoTorchDualSingleTaskGP:
         #     train_x = torch.cat((train_x, torch.tensor([[start_state[0], start_state[1], actions_taken[i][0], actions_taken[i][1]]])), dim=0)
         #     train_y = torch.cat((train_y, torch.tensor([[state[0], state[1]]])), dim=0)
 
-        return train_x, train_y, {x: states_visited.count(x) for x in states_visited}
+        return train_x, train_y, {x: states_visited.count(x) for x in states_visited}, unsafe_count
